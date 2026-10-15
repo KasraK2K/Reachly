@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Reachly Sender</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <img src="/icon/32.png" alt="" width="20" height="20" />
+      <strong>Reachly</strong>
+      <span id="dot" class="dot"></span>
+      <span id="statusKind" class="muted"></span>
+    </header>
+
+    <section id="disconnected" hidden>
+      <p>Not connected.</p>
+      <p class="muted">Open Reachly → Settings → <b>Connect extension</b>.</p>
+      <button id="openSettings" class="primary">Open Settings</button>
+    </section>
+
+    <section id="connected" hidden>
+      <label class="field">
+        <span class="label">Send as</span>
+        <select id="account"></select>
+      </label>
+
+      <div class="card">
+        <div class="label">Last 24 hours</div>
+        <div class="progress-row">
+          <div class="big"><span id="sent">0</span> / <span id="limit">0</span></div>
+          <div class="muted"><span id="queued">0</span> in queue</div>
+        </div>
+        <div class="bar"><div id="bar"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Status</div>
+        <div id="statusMsg"></div>
+        <div id="current" class="muted" hidden></div>
+      </div>
+
+      <div class="row">
+        <button id="start" class="primary">Start</button>
+        <button id="stop">Stop</button>
+      </div>
+
+      <label class="toggle">
+        <input type="checkbox" id="startWithChrome" />
+        <span>Start with Chrome</span>
+      </label>
+      <p class="muted small">Keep Chrome open while sending. Limits and pauses are enforced by Reachly per Instagram account.</p>
+      <button id="openDashboard" class="link">Open dashboard</button>
+    </section>
+
+    <footer class="muted small"><span id="conn"></span> · v<span id="version"></span></footer>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

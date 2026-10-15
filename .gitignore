@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+.output
+.wxt
+.turbo
+.env
+.env.local
+*.tsbuildinfo
+.memsearch
+.idea
+.claude

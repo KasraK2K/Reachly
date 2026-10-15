@@ -1,0 +1,24 @@
+{
+  "name": "@reachly/shared",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.json --module esnext --moduleResolution bundler --outDir dist/esm && node -e \"require('fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}')\"",
+    "test": "node --test --experimental-strip-types src/index.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

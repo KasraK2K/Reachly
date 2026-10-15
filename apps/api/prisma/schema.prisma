@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  New
+  Contacted
+  Replied
+  Converted
+  NotInterested
+}
+
+enum CampaignStatus {
+  Draft
+  Active
+  Paused
+  Completed
+}
+
+enum JobState {
+  Queued
+  Claimed
+  Sent
+  Failed
+  Skipped
+}
+
+enum Role {
+  Admin
+  Member
+}
+
+model User {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  name         String?
+  image        String?
+  role         Role             @default(Member)
+  /// scrypt hash; null = this user can only sign in with Google.
+  passwordHash String?
+  createdAt    DateTime         @default(now())
+  igAccounts   IgAccount[]
+  leads        Lead[]
+  templates    Template[]
+  campaigns    Campaign[]
+  extTokens    ExtensionToken[]
+}
+
+model ExtensionToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+}
+
+model IgAccount {
+  id                  String     @id @default(cuid())
+  userId              String
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle              String
+  /// Numeric Instagram user id, bound on the first heartbeat from a logged-in browser.
+  igUserId            String?
+  timezone            String     @default("UTC")
+  dailyLimit          Int        @default(30)
+  minDelaySec         Int        @default(45)
+  maxDelaySec         Int        @default(120)
+  quietStart          String     @default("22:00")
+  quietEnd            String     @default("07:00")
+  pauseOnErrors       Boolean    @default(true)
+  pausedReason        String?
+  consecutiveFailures Int        @default(0)
+  nextSendAt          DateTime?
+  lastHeartbeatAt     DateTime?
+  extensionVersion    String?
+  createdAt           DateTime   @default(now())
+  campaigns           Campaign[]
+
+  @@unique([userId, handle])
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle    String
+  name      String?
+  niche     String?
+  industry  String?
+  followers Int?
+  notes     String?
+  /// IANA zone for quiet hours; falls back to the sending account's zone.
+  timezone  String?
+  status    LeadStatus @default(New)
+  tags      String[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  jobs      SendJob[]
+
+  @@unique([userId, handle])
+  @@index([userId, status])
+}
+
+model Template {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  body      String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  campaigns CampaignTemplate[]
+  jobs      SendJob[]
+}
+
+model Campaign {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  igAccountId String
+  igAccount   IgAccount          @relation(fields: [igAccountId], references: [id], onDelete: Cascade)
+  name        String
+  status      CampaignStatus     @default(Draft)
+  createdAt   DateTime           @default(now())
+  templates   CampaignTemplate[]
+  jobs        SendJob[]
+}
+
+model CampaignTemplate {
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, templateId])
+}
+
+model SendJob {
+  id           String    @id @default(cuid())
+  campaignId   String
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  templateId   String
+  template     Template  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  renderedText String
+  state        JobState  @default(Queued)
+  attempts     Int       @default(0)
+  claimedAt    DateTime?
+  sentAt       DateTime?
+  error        String?
+  createdAt    DateTime  @default(now())
+
+  @@unique([campaignId, leadId])
+  @@index([state, campaignId])
+  @@index([sentAt])
+}

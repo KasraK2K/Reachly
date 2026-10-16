@@ -43,7 +43,7 @@ Five wrong passwords for one email lock that email out for 15 minutes.
 
 ## How a message gets sent
 
-1. **Campaign → Create draft:** one message is rendered per lead (variants rotate round-robin) so you can review and edit every message before sending. Leads already messaged or queued are excluded.
+1. **Campaign → Create draft:** one first message is rendered per lead (variants rotate round-robin) so you can review and edit every message before sending. Leads already messaged or queued are excluded. Optional **follow-ups** (up to 5, each 1–30 days after the previous step) are rendered and queued when the previous step is sent.
 2. **Start sending:** the extension calls `POST /extension/claim` about every minute. The API locks the account row and checks, in order: paused, Instagram login present and matching the bound account, one send at a time, delay since the last send, rolling 24h cap, and quiet hours in the lead's timezone (falling back to the account's). It then hands out one job.
 3. The extension opens the lead's profile in a pinned tab, clicks **Message**, types the text one character at a time (30–120 ms per character, timed from the service worker so background-tab throttling doesn't apply), sends it, and reports the result.
 4. **Results:**
@@ -61,11 +61,22 @@ pnpm --filter @reachly/shared test   # renderer/spintax/handles
 pnpm --filter @reachly/api test      # engine: concurrency, pacing, cap, pause, quiet hours (needs Postgres)
 ```
 
-## Known limits (milestone 1)
+**Stop on reply:** a follow-up is only handed out while the lead is still *New* or *Contacted*. Marking a lead *Replied*, *Converted* or *Not interested* (in Leads, in the Reply assistant, or through a Calendly booking) cancels everything still queued for them.
+
+## More features
+
+- **Analytics:** reply and conversion rate per campaign and per first-message variant (A/B), messages sent over the last 14 days, and a CSV export of all leads (Leads → Export CSV). Replies are counted from lead statuses.
+- **Reply assistant (AI, suggestions only):** describe your persona, offer, goal, objections and handoff rules once, then paste a DM thread to get three reply drafts. Nothing is ever sent automatically. Needs `ANTHROPIC_API_KEY` in `apps/api/.env`; uses `claude-opus-5-5`.
+- **Calendly:** Settings → Calendly creates a secret webhook URL. Subscribe it to `invitee.created` and pass the lead's handle as `utm_content` on your booking link (or ask for it in a booking question). A booking marks the lead Converted and cancels their follow-ups. The web app must be reachable from the internet for Calendly to call it.
+- **Account:** users can change their own password in Settings. Sign-in lockout is stored in Postgres, so it holds across API instances.
+
+## Known limits
 
 - Instagram markup changes will break sending. All selectors and text matchers live in `apps/extension/lib/selectors.ts`, and they assume the Instagram UI is set to **English**.
-- Replies aren't detected yet: there's no inbox or Graph API. Mark a lead *Replied* / *Not interested* in Leads, and any queued messages to that lead are cancelled.
+- Replies aren't detected yet: there's no inbox or Graph API. Mark a lead *Replied* / *Not interested* in Leads, and any queued messages to that lead are cancelled. If you forget, a follow-up can still go out to someone who answered on Instagram.
 - Chrome must stay open while sending. `chrome.alarms` fires at most every 30 s, so delays shorter than 30 s are effectively 30 s.
 - Pacing lowers the risk of Instagram restricting an account. It doesn't remove that risk.
 
-Not built yet: Meta OAuth + inbox, follow-up steps with stop-on-reply, AI reply assistant, analytics, billing, multi-rep.
+- The sending engine has never run against the real instagram.com; it needs a test with a real account.
+
+Not built yet: Meta app + Instagram Login + inbox (Graph API), AI autopilot, AI lead scoring, billing, teams/workspaces.

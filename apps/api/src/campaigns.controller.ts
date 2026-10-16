@@ -13,6 +13,7 @@ const Create = z.object({
     tag: z.string().optional(),
     leadIds: z.array(z.string()).max(10000).optional(),
   }),
+  followUps: z.array(z.object({ templateId: z.string(), delayDays: z.number().int().min(1).max(30) })).max(5).default([]),
 });
 const JobsQuery = z.object({
   state: z.enum(JOB_STATES).optional(),
@@ -45,7 +46,11 @@ export class CampaignsController {
     const campaign = found(
       await this.db.campaign.findFirst({
         where: { id, userId },
-        include: { igAccount: { select: { id: true, handle: true } }, templates: { include: { template: true } } },
+        include: {
+          igAccount: { select: { id: true, handle: true } },
+          templates: { include: { template: true } },
+          steps: { include: { template: { select: { id: true, name: true } } }, orderBy: { position: 'asc' } },
+        },
       }),
       'Campaign',
     );
@@ -73,16 +78,18 @@ export class CampaignsController {
   }
 
   /**
-   * Creates a Draft with one rendered message per lead (variants rotated round-robin) so the user
+   * Creates a Draft with one rendered first message per lead (follow-ups are rendered when the previous step is sent) (variants rotated round-robin) so the user
    * can review exactly what will be sent. Leads already contacted or queued anywhere are excluded.
    */
   @Post()
   async create(@UserId() userId: string, @Body() body: unknown) {
-    const { name, igAccountId, templateIds, filter } = parse(Create, body);
+    const { name, igAccountId, templateIds, filter, followUps } = parse(Create, body);
     found(await this.db.igAccount.findFirst({ where: { id: igAccountId, userId } }), 'Instagram account');
-    const templates = await this.db.template.findMany({ where: { userId, id: { in: templateIds } } });
-    if (templates.length !== new Set(templateIds).size) throw new BadRequestException('Unknown template');
-    for (const t of templates) {
+    const allIds = [...new Set([...templateIds, ...followUps.map((f) => f.templateId)])];
+    const all = await this.db.template.findMany({ where: { userId, id: { in: allIds } } });
+    if (all.length !== allIds.length) throw new BadRequestException('Unknown template');
+    const templates = all.filter((t) => templateIds.includes(t.id));
+    for (const t of all) {
       if (templateErrors(t.body).length) throw new BadRequestException(`Template "${t.name}" has errors`);
     }
 
@@ -110,6 +117,7 @@ export class CampaignsController {
         igAccountId,
         name,
         templates: { create: templates.map((t) => ({ templateId: t.id })) },
+        steps: { create: followUps.map((f, i) => ({ position: i + 1, delayDays: f.delayDays, templateId: f.templateId })) },
         jobs: { createMany: { data: jobs } },
       },
     });

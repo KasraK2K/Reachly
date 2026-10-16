@@ -5,6 +5,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { AccountDialog } from "@/components/account-dialog"
 import { EmptyState, fmtDate, PageHeader } from "@/components/common"
+import { CalendlyCard, PasswordCard } from "@/components/settings-extra"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -120,7 +121,7 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section>
+      <section className="mb-10">
         <h2 className="font-semibold">Chrome extension</h2>
         <p className="mb-3 text-sm text-muted-foreground">Cold messages are sent by the extension from your own browser session. Chrome must stay open while a campaign runs.</p>
         <Card>
@@ -140,6 +141,9 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </section>
+
+      <CalendlyCard />
+      <PasswordCard />
 
       <AccountDialog account={editing} open={open} onOpenChange={setOpen} onSaved={reload} />
     </>

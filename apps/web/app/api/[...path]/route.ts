@@ -18,7 +18,10 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     cache: "no-store",
   }).catch(() => null)
   if (!res) return NextResponse.json({ message: "API is unreachable" }, { status: 502 })
-  return new Response(res.body, { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "application/json" } })
+  const headers = new Headers({ "content-type": res.headers.get("content-type") ?? "application/json" })
+  const disposition = res.headers.get("content-disposition")
+  if (disposition) headers.set("content-disposition", disposition)
+  return new Response(res.body, { status: res.status, headers })
 }
 
 export { proxy as GET, proxy as POST, proxy as PATCH, proxy as DELETE }

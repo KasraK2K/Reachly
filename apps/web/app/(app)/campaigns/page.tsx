@@ -18,7 +18,7 @@ export default function CampaignsPage() {
 
   return (
     <>
-      <PageHeader title="Campaigns" description="A campaign sends one message per lead from one Instagram account, paced by your account limits.">
+      <PageHeader title="Campaigns" description="A campaign sends a first message and optional follow-ups per lead from one Instagram account, paced by your account limits.">
         <Button onClick={() => setOpen(true)}>
           <Plus /> New campaign
         </Button>

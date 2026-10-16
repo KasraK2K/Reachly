@@ -48,6 +48,7 @@ export interface Campaign {
   createdAt: string
   igAccount: { id?: string; handle: string }
   templates: { id: string; name: string; body?: string }[]
+  steps?: { position: number; delayDays: number; template: { id: string; name: string } }[]
   counts: Record<JobState, number>
 }
 
@@ -57,6 +58,8 @@ export interface Job {
   state: JobState
   error: string | null
   sentAt: string | null
+  step: number
+  dueAt: string | null
   attempts: number
   lead: { id: string; handle: string; name: string | null; status: LeadStatus }
   template: { name: string }

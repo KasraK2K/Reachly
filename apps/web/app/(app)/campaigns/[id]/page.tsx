@@ -68,7 +68,10 @@ export default function CampaignPage() {
       <Link href="/campaigns" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Campaigns
       </Link>
-      <PageHeader title={c.name} description={`From @${c.igAccount.handle} · variants: ${c.templates.map((t) => t.name).join(", ")}`}>
+      <PageHeader
+        title={c.name}
+        description={`From @${c.igAccount.handle} · variants: ${c.templates.map((t) => t.name).join(", ")}${c.steps?.length ? ` · follow-ups: ${c.steps.map((s) => `${s.template.name} (+${s.delayDays}d)`).join(", ")}` : ""}`}
+      >
         <StatusBadge status={c.status} className="self-center" />
         {(c.status === "Draft" || c.status === "Paused") && (
           <Button onClick={() => act("activate")}>
@@ -151,13 +154,17 @@ export default function CampaignPage() {
                 </TableCell>
                 <TableCell className="max-w-md align-top">
                   <p className="text-sm whitespace-pre-wrap">{j.renderedText}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{j.template.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {j.step ? `Follow-up ${j.step}` : "First message"} · {j.template.name}
+                  </p>
                 </TableCell>
                 <TableCell className="align-top">
                   <StatusBadge status={j.state} />
                   {j.error && <p className="mt-1 max-w-40 text-xs text-destructive">{j.error}</p>}
                 </TableCell>
-                <TableCell className="align-top text-sm whitespace-nowrap text-muted-foreground">{fmtDate(j.sentAt)}</TableCell>
+                <TableCell className="align-top text-sm whitespace-nowrap text-muted-foreground">
+                  {j.sentAt ? fmtDate(j.sentAt) : j.state === "Queued" && j.dueAt && new Date(j.dueAt) > new Date() ? `Due ${fmtDate(j.dueAt)}` : "—"}
+                </TableCell>
                 <TableCell className="align-top">
                   {j.state === "Queued" && (
                     <Button

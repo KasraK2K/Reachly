@@ -1,7 +1,7 @@
 "use client"
 
 import { LEAD_STATUSES, type LeadStatus } from "@reachly/shared"
-import { Plus, Search, Trash2, Upload } from "lucide-react"
+import { Download, Plus, Search, Trash2, Upload } from "lucide-react"
 import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -84,6 +84,11 @@ function Leads() {
   return (
     <>
       <PageHeader title={`Leads${data ? ` (${data.total.toLocaleString()})` : ""}`} description="Your prospect list. Bring it from a spreadsheet or add people one by one.">
+        <Button variant="outline" asChild>
+          <a href="/api/leads/export" download>
+            <Download /> Export CSV
+          </a>
+        </Button>
         <Button variant="outline" onClick={() => setImportOpen(true)}>
           <Upload /> Import CSV
         </Button>

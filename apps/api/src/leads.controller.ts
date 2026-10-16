@@ -38,6 +38,13 @@ const ListQuery = z.object({
 });
 const ImportBody = z.object({ rows: z.array(z.record(z.string(), z.unknown())).min(1).max(10000) });
 
+/** Active campaigns with nothing left to send are marked Completed. */
+export const completeIdleCampaigns = (db: PrismaService, userId: string) =>
+  db.campaign.updateMany({
+    where: { userId, status: 'Active', jobs: { none: { state: { in: ['Queued', 'Claimed'] } } } },
+    data: { status: 'Completed' },
+  });
+
 @Controller('leads')
 export class LeadsController {
   constructor(private db: PrismaService) {}
@@ -125,6 +132,7 @@ export class LeadsController {
     // A lead that replied or opted out must never get another queued cold DM.
     if (data.status && data.status !== 'New' && data.status !== 'Contacted') {
       await this.db.sendJob.updateMany({ where: { leadId: id, state: 'Queued' }, data: { state: 'Skipped', error: `Lead marked ${data.status}` } });
+      await completeIdleCampaigns(this.db, userId);
     }
     return lead;
   }

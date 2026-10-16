@@ -108,3 +108,45 @@ test('quiet hours use the lead timezone', async (t) => {
   const quiet = await engine.claim(userId, acctId, '111');
   assert.ok('wait' in quiet && quiet.wait === 'QUIET_HOURS');
 });
+
+test('follow-ups wait for their delay and stop when the lead replies', async (t) => {
+  if (!dbUp) return t.skip('database not reachable');
+  await db.igAccount.update({ where: { id: acctId }, data: { pausedReason: null, quietStart: '00:00', quietEnd: '00:00', nextSendAt: null, dailyLimit: 100 } });
+  await db.campaign.updateMany({ where: { userId }, data: { status: 'Paused' } });
+  const tpl = await db.template.create({ data: { userId, name: 'f', body: 'following up {{name}}' } });
+  const [x, y] = await Promise.all(['x', 'y'].map((h) => db.lead.create({ data: { userId, handle: `fu_${h}`, name: h } })));
+  const c = await db.campaign.create({
+    data: {
+      userId,
+      igAccountId: acctId,
+      name: 'seq',
+      status: 'Active',
+      steps: { create: [{ position: 1, delayDays: 2, templateId: tpl.id }] },
+      jobs: { createMany: { data: [x, y].map((l) => ({ leadId: l.id, templateId: tpl.id, renderedText: `hi ${l.name}` })) } },
+    },
+  });
+  const sendNext = async (now: Date) => {
+    await db.igAccount.update({ where: { id: acctId }, data: { nextSendAt: null } });
+    const r = await engine.claim(userId, acctId, '111', now);
+    if ('job' in r) await engine.result(userId, r.job.id, { ok: true });
+    return r;
+  };
+  const now = new Date();
+  await sendNext(now);
+  await sendNext(now);
+  const followUps = await db.sendJob.findMany({ where: { campaignId: c.id, step: 1 } });
+  assert.equal(followUps.length, 2);
+  assert.equal(followUps[0].renderedText.startsWith('following up'), true);
+
+  // Not due yet.
+  const early = await sendNext(new Date(now.getTime() + 60_000));
+  assert.ok('wait' in early && early.wait === 'QUEUE_EMPTY');
+
+  // x replied: only y's follow-up goes out, then the campaign completes.
+  await db.lead.update({ where: { id: x.id }, data: { status: 'Replied' } });
+  const later = new Date(now.getTime() + 3 * 24 * 3600_000);
+  const r = await sendNext(later);
+  assert.ok('job' in r && r.job.handle === 'fu_y');
+  const again = await sendNext(later);
+  assert.ok('wait' in again && again.wait === 'QUEUE_EMPTY');
+});

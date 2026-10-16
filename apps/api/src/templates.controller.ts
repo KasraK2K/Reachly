@@ -40,7 +40,7 @@ export class TemplatesController {
   @Delete(':id')
   async remove(@UserId() userId: string, @Param('id') id: string) {
     found(await this.db.template.findFirst({ where: { id, userId } }), 'Template');
-    if (await this.db.sendJob.count({ where: { templateId: id } })) {
+    if ((await this.db.sendJob.count({ where: { templateId: id } })) || (await this.db.campaignStep.count({ where: { templateId: id } }))) {
       throw new BadRequestException('Template is used by a campaign; delete the campaign first');
     }
     await this.db.template.delete({ where: { id } });

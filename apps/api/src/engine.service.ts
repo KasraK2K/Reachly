@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { IgAccount } from '@prisma/client';
-import { BLOCKING_ERRORS, LEAD_ERRORS, SendError } from '@reachly/shared';
+import { IgAccount, Prisma } from '@prisma/client';
+import { BLOCKING_ERRORS, LEAD_ERRORS, renderTemplate, SendError } from '@reachly/shared';
 import { PrismaService } from './prisma.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -9,6 +9,8 @@ const STALE_CLAIM_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 2;
 const FAILURES_BEFORE_PAUSE = 3;
 const ONLINE_MS = 2 * 60 * 1000;
+/** Leads in these statuses still get messages; anything else (replied, converted, opted out) stops the sequence. */
+export const SENDABLE_LEAD = ['New', 'Contacted'] as const;
 
 export type WaitReason = 'PAUSED' | 'NOT_LOGGED_IN' | 'WRONG_ACCOUNT' | 'BUSY' | 'PACING' | 'DAILY_LIMIT' | 'QUEUE_EMPTY' | 'QUIET_HOURS';
 export type ClaimResult =
@@ -63,7 +65,7 @@ export class EngineService {
       this.db.$queryRaw<{ igAccountId: string; sent24h: bigint; queued: bigint }[]>`
         SELECT c."igAccountId",
                count(*) FILTER (WHERE j.state = 'Sent' AND j."sentAt" >= now() - interval '24 hours') AS "sent24h",
-               count(*) FILTER (WHERE j.state = 'Queued' AND c.status = 'Active') AS "queued"
+               count(*) FILTER (WHERE j.state = 'Queued' AND c.status = 'Active' AND (j."dueAt" IS NULL OR j."dueAt" <= now())) AS "queued"
         FROM "SendJob" j JOIN "Campaign" c ON c.id = j."campaignId"
         WHERE c."userId" = ${userId}
         GROUP BY c."igAccountId"`,
@@ -128,9 +130,14 @@ export class EngineService {
       // ponytail: scans the 50 oldest queued jobs for one outside the lead's quiet hours; enough unless
       // a single campaign mixes thousands of leads across many timezones.
       const candidates = await tx.sendJob.findMany({
-        where: { campaign: { igAccountId: acct.id, status: 'Active' }, state: 'Queued' },
+        where: {
+          campaign: { igAccountId: acct.id, status: 'Active' },
+          state: 'Queued',
+          OR: [{ dueAt: null }, { dueAt: { lte: now } }],
+          lead: { status: { in: [...SENDABLE_LEAD] } },
+        },
         include: { lead: { select: { handle: true, name: true, timezone: true } } },
-        orderBy: { createdAt: 'asc' },
+        orderBy: [{ dueAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
         take: 50,
       });
       if (!candidates.length) return wait('QUEUE_EMPTY', 120, 'Nothing to send');
@@ -157,6 +164,7 @@ export class EngineService {
       if (r.ok) {
         await tx.sendJob.update({ where: { id: job.id }, data: { state: 'Sent', sentAt: now, error: null } });
         await tx.lead.updateMany({ where: { id: job.leadId, status: 'New' }, data: { status: 'Contacted' } });
+        await this.queueNextStep(tx, job.campaignId, job.leadId, job.step, now);
         await tx.igAccount.update({
           where: { id: acct.id },
           data: { consecutiveFailures: 0, nextSendAt: new Date(now.getTime() + randomDelayMs(acct)) },
@@ -190,5 +198,20 @@ export class EngineService {
       });
     });
     return { ignored: false, paused: !!pausedReason, pausedReason };
+  }
+
+  /** Queues follow-up `step + 1` (if the campaign has one) to go out after its delay. Stop-on-reply happens at claim time. */
+  private async queueNextStep(tx: Prisma.TransactionClient, campaignId: string, leadId: string, step: number, now: Date) {
+    const next = await tx.campaignStep.findUnique({
+      where: { campaignId_position: { campaignId, position: step + 1 } },
+      include: { template: true },
+    });
+    const lead = next && (await tx.lead.findUnique({ where: { id: leadId } }));
+    if (!next || !lead || !(SENDABLE_LEAD as readonly string[]).includes(lead.status)) return;
+    const renderedText = renderTemplate(next.template.body, lead);
+    if (!renderedText) return;
+    await tx.sendJob.create({
+      data: { campaignId, leadId, templateId: next.templateId, step: step + 1, renderedText, dueAt: new Date(now.getTime() + next.delayDays * DAY_MS) },
+    });
   }
 }

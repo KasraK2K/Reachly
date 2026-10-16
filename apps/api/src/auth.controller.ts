@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, HttpException, Post, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, HttpException, Post, UnauthorizedException } from '@nestjs/common';
 import { z } from 'zod';
 import { Auth, parse, UserId } from './http';
 import { hashPassword, verifyPassword } from './password';
@@ -9,8 +9,6 @@ export const Password = z.string().min(8, 'Password must be at least 8 character
 
 const MAX_FAILURES = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
-// ponytail: in-memory, per API process. Move to Postgres/Redis when the API runs as more than one instance.
-const failures = new Map<string, { count: number; first: number }>();
 
 const publicUser = (u: { id: string; email: string; name: string | null; role: string; passwordHash?: string | null }) => ({
   id: u.id,
@@ -54,18 +52,43 @@ export class AuthController {
   @Auth('service')
   async verify(@Body() body: unknown) {
     const { email, password } = parse(z.object({ email: Email, password: z.string().max(200) }), body);
-    const f = failures.get(email);
-    if (f && Date.now() - f.first > LOCKOUT_MS) failures.delete(email);
-    if ((failures.get(email)?.count ?? 0) >= MAX_FAILURES) throw new HttpException('Too many attempts. Try again in 15 minutes.', 429);
-
+    if (await this.lockedOut(email)) throw new HttpException('Too many attempts. Try again in 15 minutes.', 429);
     const user = await this.db.user.findUnique({ where: { email } });
     if (!(await verifyPassword(password, user?.passwordHash ?? null)) || !user) {
-      const cur = failures.get(email) ?? { count: 0, first: Date.now() };
-      failures.set(email, { ...cur, count: cur.count + 1 });
+      await this.recordFailure(email);
       throw new UnauthorizedException('Wrong email or password');
     }
-    failures.delete(email);
+    await this.db.loginFailure.deleteMany({ where: { email } });
     return publicUser(user);
+  }
+
+  /** Shared by every API instance: counts live in Postgres, and the window restarts once it has expired. */
+  private async lockedOut(email: string) {
+    const f = await this.db.loginFailure.findUnique({ where: { email } });
+    return !!f && f.count >= MAX_FAILURES && Date.now() - f.firstAt.getTime() < LOCKOUT_MS;
+  }
+
+  private async recordFailure(email: string) {
+    const now = new Date();
+    await this.db.$executeRaw`
+      INSERT INTO "LoginFailure" (email, count, "firstAt") VALUES (${email}, 1, ${now})
+      ON CONFLICT (email) DO UPDATE SET
+        count = CASE WHEN "LoginFailure"."firstAt" < ${new Date(now.getTime() - LOCKOUT_MS)} THEN 1 ELSE "LoginFailure".count + 1 END,
+        "firstAt" = CASE WHEN "LoginFailure"."firstAt" < ${new Date(now.getTime() - LOCKOUT_MS)} THEN ${now} ELSE "LoginFailure"."firstAt" END`;
+  }
+
+  /** Users change their own password. Google-only users (no password yet) can set one without a current password. */
+  @Post('me/password')
+  async changePassword(@UserId() userId: string, @Body() body: unknown) {
+    const { current, password } = parse(z.object({ current: z.string().max(200).optional(), password: Password }), body);
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId } });
+    if (await this.lockedOut(user.email)) throw new HttpException('Too many attempts. Try again in 15 minutes.', 429);
+    if (user.passwordHash && !(await verifyPassword(current ?? '', user.passwordHash))) {
+      await this.recordFailure(user.email);
+      throw new BadRequestException('Current password is wrong');
+    }
+    await this.db.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password) } });
+    return { ok: true };
   }
 
   /** Google sign-in is allowed only for emails an admin has added. */

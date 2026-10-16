@@ -1,6 +1,7 @@
 "use client"
 
 import { LEAD_STATUSES } from "@reachly/shared"
+import { Plus, X } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -27,6 +28,9 @@ export function NewCampaignDialog({ open, onOpenChange }: { open: boolean; onOpe
   const [templateIds, setTemplateIds] = useState<string[]>([])
   const [status, setStatus] = useState<string>("New")
   const [tag, setTag] = useState(ALL)
+  const [followUps, setFollowUps] = useState<{ templateId: string; delayDays: number }[]>([])
+  const setFollowUp = (i: number, patch: Partial<{ templateId: string; delayDays: number }>) =>
+    setFollowUps(followUps.map((f, j) => (j === i ? { ...f, ...patch } : f)))
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -37,7 +41,7 @@ export function NewCampaignDialog({ open, onOpenChange }: { open: boolean; onOpe
     setBusy(true)
     try {
       const c = await call<{ id: string }>("/campaigns", {
-        body: { name, igAccountId: accountId, templateIds, filter: { status, ...(tag !== ALL && { tag }) } },
+        body: { name, igAccountId: accountId, templateIds, filter: { status, ...(tag !== ALL && { tag }) }, followUps },
       })
       onOpenChange(false)
       router.push(`/campaigns/${c.id}`)
@@ -52,7 +56,7 @@ export function NewCampaignDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New campaign</DialogTitle>
           <DialogDescription>Creates a draft with every message pre-written so you can review it before anything is sent.</DialogDescription>
@@ -147,12 +151,50 @@ export function NewCampaignDialog({ open, onOpenChange }: { open: boolean; onOpe
                 </Select>
               </div>
             </div>
+            <div className="grid gap-1.5">
+              <Label>Follow-ups</Label>
+              {followUps.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Select value={f.templateId} onValueChange={(v) => setFollowUp(i, { templateId: v })}>
+                    <SelectTrigger className="min-w-0 flex-1" aria-label={`Follow-up ${i + 1} template`}>
+                      <SelectValue placeholder="Template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates?.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={30}
+                    className="w-20"
+                    aria-label={`Follow-up ${i + 1} delay in days`}
+                    value={f.delayDays}
+                    onChange={(e) => setFollowUp(i, { delayDays: Number(e.target.value) })}
+                  />
+                  <span className="text-sm whitespace-nowrap text-muted-foreground">days later</span>
+                  <Button variant="ghost" size="icon-sm" aria-label="Remove follow-up" onClick={() => setFollowUps(followUps.filter((_, j) => j !== i))}>
+                    <X />
+                  </Button>
+                </div>
+              ))}
+              {followUps.length < 5 && (
+                <Button variant="outline" size="sm" className="justify-self-start" onClick={() => setFollowUps([...followUps, { templateId: "", delayDays: 3 }])}>
+                  <Plus /> Add follow-up
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">Sent only if the lead hasn&apos;t replied. Marking a lead Replied or Not interested stops the rest.</p>
+            </div>
             <p className="text-xs text-muted-foreground">Leads that were already messaged or are queued in another campaign are left out automatically.</p>
           </div>
         )}
 
         <DialogFooter>
-          <Button onClick={create} disabled={!!missing || busy || !name.trim() || !accountId || !templateIds.length}>
+          <Button onClick={create} disabled={!!missing || busy || !name.trim() || !accountId || !templateIds.length || followUps.some((f) => !f.templateId || f.delayDays < 1 || f.delayDays > 30)}>
             {busy ? "Creating…" : "Create draft"}
           </Button>
         </DialogFooter>

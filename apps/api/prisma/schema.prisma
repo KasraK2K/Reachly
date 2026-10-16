@@ -43,6 +43,10 @@ model User {
   role         Role             @default(Member)
   /// scrypt hash; null = this user can only sign in with Google.
   passwordHash String?
+  /// Secret path segment for inbound webhooks (Calendly); null until generated in Settings.
+  webhookToken String?          @unique
+  /// AI reply assistant setup: { persona, knowledge, goal, objections, handoff }.
+  aiSetter     Json?
   createdAt    DateTime         @default(now())
   igAccounts   IgAccount[]
   leads        Lead[]
@@ -116,6 +120,7 @@ model Template {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
   campaigns CampaignTemplate[]
+  steps     CampaignStep[]
   jobs      SendJob[]
 }
 
@@ -129,7 +134,20 @@ model Campaign {
   status      CampaignStatus     @default(Draft)
   createdAt   DateTime           @default(now())
   templates   CampaignTemplate[]
+  steps       CampaignStep[]
   jobs        SendJob[]
+}
+
+/// Follow-up N (position 1..) goes out `delayDays` after the previous step was sent, unless the lead replied.
+model CampaignStep {
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  position   Int
+  delayDays  Int
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, position])
 }
 
 model CampaignTemplate {
@@ -149,15 +167,26 @@ model SendJob {
   lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   templateId   String
   template     Template  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  /// 0 = first message, N = follow-up N.
+  step         Int       @default(0)
   renderedText String
   state        JobState  @default(Queued)
+  /// Follow-ups only: not handed out before this time. Null = send whenever the account is free.
+  dueAt        DateTime?
   attempts     Int       @default(0)
   claimedAt    DateTime?
   sentAt       DateTime?
   error        String?
   createdAt    DateTime  @default(now())
 
-  @@unique([campaignId, leadId])
+  @@unique([campaignId, leadId, step])
   @@index([state, campaignId])
   @@index([sentAt])
+}
+
+/// Failed password sign-ins per email, for lockout. In Postgres so every API instance shares it.
+model LoginFailure {
+  email   String   @id
+  count   Int
+  firstAt DateTime
 }

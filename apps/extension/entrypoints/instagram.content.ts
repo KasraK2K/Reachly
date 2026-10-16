@@ -20,9 +20,15 @@ async function run(cmd: Command): Promise<SendOutcome> {
       const c = composer();
       if (!c) return { ok: false, error: 'UI_CHANGED', detail: 'Message box not found' };
       c.focus();
-      // Clear any unsent draft left in this thread.
-      document.execCommand('selectAll');
-      document.execCommand('delete');
+      // Clear any unsent draft left in this thread. execCommand('selectAll'/'delete') doesn't reach
+      // Instagram's editor (Lexical); selecting the box's contents and a beforeinput delete does.
+      const range = document.createRange();
+      range.selectNodeContents(c);
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+      c.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 100));
+      if (norm(c.innerText)) return { ok: false, error: 'UI_CHANGED', detail: `Could not clear an old draft: "${norm(c.innerText).slice(0, 40)}"` };
       return { ok: true };
     }
     case 'typeChar': {

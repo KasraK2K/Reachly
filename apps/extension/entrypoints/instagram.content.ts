@@ -1,6 +1,6 @@
 import type { SendOutcome } from '@/lib/api';
 import type { Command } from '@/lib/driver';
-import { SEL, TEXT } from '@/lib/selectors';
+import { CHECKPOINT_PATH, SEL, TEXT } from '@/lib/selectors';
 
 export default defineContentScript({
   matches: ['https://www.instagram.com/*'],
@@ -29,7 +29,11 @@ async function run(cmd: Command): Promise<SendOutcome> {
       const c = composer();
       if (!c) return { ok: false, error: 'UI_CHANGED', detail: 'Message box disappeared while typing' };
       if (document.activeElement !== c) c.focus();
-      if (cmd.ch === '\n') document.execCommand('insertLineBreak');
+      // Box emptied mid-message: Instagram sent what was typed so far. Stop before anything else goes out.
+      if (norm(cmd.typedSoFar) && !norm(c.innerText)) {
+        return { ok: false, error: 'PARTIAL_SEND', detail: `the box emptied after "${norm(cmd.typedSoFar).slice(-40)}"` };
+      }
+      if (cmd.ch === '\n') pasteText(c, '\n');
       else document.execCommand('insertText', false, cmd.ch);
       return { ok: true };
     }
@@ -62,8 +66,13 @@ async function openThread(): Promise<SendOutcome> {
 async function submit(expected: string): Promise<SendOutcome> {
   const c = composer();
   if (!c) return { ok: false, error: 'UI_CHANGED', detail: 'Message box not found before sending' };
-  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
-  if (norm(c.innerText) !== norm(expected)) return { ok: false, error: 'UI_CHANGED', detail: 'Typed text does not match the message' };
+  const typed = norm(c.innerText);
+  if (typed !== norm(expected)) {
+    // Show where they diverge, so a composer quirk (line breaks, emoji, autocorrect) can be fixed from the report.
+    let i = 0;
+    while (i < typed.length && typed[i] === norm(expected)[i]) i++;
+    return { ok: false, error: 'UI_CHANGED', detail: `Typed text does not match the message at char ${i}: box has "${typed.slice(Math.max(0, i - 20), i + 40)}"` };
+  }
 
   const send = findByText(TEXT.sendButton);
   if (send) send.click();
@@ -76,7 +85,22 @@ async function submit(expected: string): Promise<SendOutcome> {
   return cleared ? { ok: true } : { ok: false, error: 'UI_CHANGED', detail: 'Message did not leave the composer' };
 }
 
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * Instagram's composer treats a typed line break (Enter, or execCommand insertLineBreak) as "send".
+ * A plain-text paste goes through the editor's paste path, which inserts the newline instead.
+ */
+function pasteText(el: HTMLElement, text: string) {
+  const data = new DataTransfer();
+  data.setData('text/plain', text);
+  el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+}
+
 function pageProblem(): SendOutcome | null {
+  if (CHECKPOINT_PATH.test(location.pathname)) {
+    return { ok: false, error: 'ACTION_BLOCKED', detail: `Instagram is asking you to verify or unlock the account (${location.pathname})` };
+  }
   if (location.pathname.startsWith('/accounts/login') || document.querySelector(SEL.loginForm)) return { ok: false, error: 'NOT_LOGGED_IN' };
   const dialogText = [...document.querySelectorAll<HTMLElement>(SEL.dialog)].map((d) => d.innerText).join('\n');
   if (TEXT.rateLimited.test(dialogText)) return { ok: false, error: 'RATE_LIMITED', detail: dialogText.slice(0, 200) };

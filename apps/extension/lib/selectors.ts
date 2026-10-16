@@ -9,6 +9,9 @@ export const SEL = {
   clickable: 'button, div[role="button"], a[role="link"], a[role="button"]',
 };
 
+/** Paths Instagram redirects to when the account is locked, suspended or must verify itself. */
+export const CHECKPOINT_PATH = /^\/(accounts\/(suspended|disabled)|challenge)(\/|$)/;
+
 export const TEXT = {
   messageButton: /^message$/i,
   sendButton: /^send$/i,

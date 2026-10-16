@@ -27,18 +27,19 @@ async function render() {
   const select = $<HTMLSelectElement>('account');
   select.innerHTML = accounts.length ? '' : '<option value="">Add an Instagram account in Settings</option>';
   for (const a of accounts) select.add(new Option(`@${a.handle}`, a.id, false, a.id === s.igAccountId));
-  if (!s.igAccountId && accounts[0]) await send({ type: 'setAccount', igAccountId: accounts[0].id });
-
   const acct = accounts.find((a) => a.id === s.igAccountId) ?? accounts[0];
+  // Also heals a stored id whose account was deleted (e.g. removed and re-added in Settings);
+  // otherwise the popup shows one account while the background heartbeats a dead id.
+  if (acct && acct.id !== s.igAccountId) await send({ type: 'setAccount', igAccountId: acct.id });
   $('sent').textContent = String(acct?.sent24h ?? 0);
   $('limit').textContent = String(acct?.dailyLimit ?? 0);
   $('queued').textContent = String(acct?.queued ?? 0);
   $('bar').style.width = `${acct ? Math.min(100, (acct.sent24h / acct.dailyLimit) * 100) : 0}%`;
 
-  const kind = acct?.pausedReason ? 'paused' : s.running ? s.status.kind : 'idle';
+  const kind = acct?.pausedReason ? 'paused' : s.running || s.status.kind === 'error' ? s.status.kind : 'idle';
   $('dot').className = `dot ${kind}`;
   $('statusKind').textContent = { idle: 'Stopped', sending: 'Running', waiting: 'Running', paused: 'Paused', error: 'Error' }[kind];
-  $('statusMsg').textContent = acct?.pausedReason ? `Paused: ${acct.pausedReason}` : s.running ? s.status.message : 'Stopped';
+  $('statusMsg').textContent = acct?.pausedReason ? `Paused: ${acct.pausedReason}` : kind === 'idle' ? 'Stopped' : s.status.message;
   $('current').hidden = !s.current;
   if (s.current) $('current').textContent = `Now: ${s.current.name ?? ''} @${s.current.handle}`;
 

@@ -2,7 +2,7 @@ import type { SendOutcome } from './api';
 import { getState, setState } from './state';
 
 /** Steps the Instagram content script understands. The service worker owns all timing. */
-export type Command = { type: 'openThread' } | { type: 'focusComposer' } | { type: 'typeChar'; ch: string } | { type: 'submit'; text: string };
+export type Command = { type: 'openThread' } | { type: 'focusComposer' } | { type: 'typeChar'; ch: string; typedSoFar: string } | { type: 'submit'; text: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
@@ -22,8 +22,10 @@ export async function sendDm(handle: string, text: string): Promise<SendOutcome>
 
   const focused = await ask(tabId, { type: 'focusComposer' });
   if (!focused.ok) return focused;
+  let typedSoFar = '';
   for (const ch of text) {
-    const r = await ask(tabId, { type: 'typeChar', ch });
+    const r = await ask(tabId, { type: 'typeChar', ch, typedSoFar });
+    typedSoFar += ch;
     if (!r.ok) return r;
     await sleep(rand(30, 120));
   }

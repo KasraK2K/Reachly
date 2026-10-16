@@ -173,6 +173,11 @@ export class EngineService {
         // The lead can't be messaged; skip them without counting it against the account.
         await tx.sendJob.update({ where: { id: job.id }, data: { state: 'Skipped', error: r.error } });
         await tx.igAccount.update({ where: { id: acct.id }, data: { nextSendAt: new Date(now.getTime() + acct.minDelaySec * 1000) } });
+      } else if (r.error === 'PARTIAL_SEND') {
+        // The lead already got a fragment: retrying would send it again. Fail the job and stop the account.
+        pausedReason = `Message was sent in pieces${r.detail ? `: ${r.detail}` : ''}. Check the conversation, then fix the extension before resuming`;
+        await tx.sendJob.update({ where: { id: job.id }, data: { state: 'Failed', error: r.detail ?? r.error } });
+        await tx.igAccount.update({ where: { id: acct.id }, data: { pausedReason } });
       } else if (BLOCKING_ERRORS.includes(r.error)) {
         // Not the lead's fault: put the job back and stop the account until a human checks it.
         pausedReason = `${r.error}${r.detail ? `: ${r.detail}` : ''}`;

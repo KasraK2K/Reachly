@@ -18,6 +18,8 @@ export const SEND_ERRORS = [
   'UI_CHANGED',
   'TIMEOUT',
   'UNKNOWN',
+  /** Part of the message already left the composer (e.g. a line break was sent as Enter). Never retried. */
+  'PARTIAL_SEND',
 ] as const;
 export type SendError = (typeof SEND_ERRORS)[number];
 export const BLOCKING_ERRORS: readonly SendError[] = ['NOT_LOGGED_IN', 'ACTION_BLOCKED', 'RATE_LIMITED', 'WRONG_ACCOUNT'];

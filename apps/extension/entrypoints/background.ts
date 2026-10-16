@@ -85,6 +85,7 @@ async function heartbeat() {
   if (!s.token || !s.igAccountId) return;
   try {
     await api(s.token, 'POST', '/extension/heartbeat', { igAccountId: s.igAccountId, igUserId: await igUserId(), version: VERSION });
+    if ((await getState()).status.kind === 'error') await setStatus('idle', 'Connected');
   } catch (e) {
     await handleApiError(e);
   }

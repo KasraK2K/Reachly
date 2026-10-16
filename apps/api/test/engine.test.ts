@@ -150,3 +150,19 @@ test('follow-ups wait for their delay and stop when the lead replies', async (t)
   const again = await sendNext(later);
   assert.ok('wait' in again && again.wait === 'QUEUE_EMPTY');
 });
+
+test('a partial send fails the job without retry and pauses the account', async (t) => {
+  if (!dbUp) return t.skip('database not reachable');
+  await db.campaign.updateMany({ where: { userId }, data: { status: 'Paused' } });
+  await db.igAccount.update({ where: { id: acctId }, data: { pausedReason: null, nextSendAt: null, quietStart: '00:00', quietEnd: '00:00' } });
+  const tpl = await db.template.create({ data: { userId, name: 'p', body: 'x' } });
+  const lead = await db.lead.create({ data: { userId, handle: 'partial_lead' } });
+  await db.campaign.create({
+    data: { userId, igAccountId: acctId, name: 'partial', status: 'Active', jobs: { create: { leadId: lead.id, templateId: tpl.id, renderedText: 'a\nb' } } },
+  });
+  const r = await engine.claim(userId, acctId, '111');
+  assert.ok('job' in r);
+  const res = await engine.result(userId, r.job.id, { ok: false, error: 'PARTIAL_SEND', detail: 'box emptied' });
+  assert.equal(res.paused, true);
+  assert.equal((await db.sendJob.findUniqueOrThrow({ where: { id: r.job.id } })).state, 'Failed');
+});

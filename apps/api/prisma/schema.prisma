@@ -65,47 +65,50 @@ model ExtensionToken {
 }
 
 model IgAccount {
-  id                  String     @id @default(cuid())
+  id                  String         @id @default(cuid())
   userId              String
-  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   handle              String
   /// Numeric Instagram user id, bound on the first heartbeat from a logged-in browser.
   igUserId            String?
-  timezone            String     @default("UTC")
-  dailyLimit          Int        @default(30)
-  minDelaySec         Int        @default(45)
-  maxDelaySec         Int        @default(120)
-  quietStart          String     @default("22:00")
-  quietEnd            String     @default("07:00")
-  pauseOnErrors       Boolean    @default(true)
+  timezone            String         @default("UTC")
+  dailyLimit          Int            @default(30)
+  minDelaySec         Int            @default(45)
+  maxDelaySec         Int            @default(120)
+  quietStart          String         @default("22:00")
+  quietEnd            String         @default("07:00")
+  pauseOnErrors       Boolean        @default(true)
   pausedReason        String?
-  consecutiveFailures Int        @default(0)
+  consecutiveFailures Int            @default(0)
   nextSendAt          DateTime?
   lastHeartbeatAt     DateTime?
   extensionVersion    String?
-  createdAt           DateTime   @default(now())
+  createdAt           DateTime       @default(now())
   campaigns           Campaign[]
+  connection          IgConnection?
+  conversations       Conversation[]
 
   @@unique([userId, handle])
 }
 
 model Lead {
-  id        String     @id @default(cuid())
-  userId    String
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  handle    String
-  name      String?
-  niche     String?
-  industry  String?
-  followers Int?
-  notes     String?
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle        String
+  name          String?
+  niche         String?
+  industry      String?
+  followers     Int?
+  notes         String?
   /// IANA zone for quiet hours; falls back to the sending account's zone.
-  timezone  String?
-  status    LeadStatus @default(New)
-  tags      String[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  jobs      SendJob[]
+  timezone      String?
+  status        LeadStatus     @default(New)
+  tags          String[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  jobs          SendJob[]
+  conversations Conversation[]
 
   @@unique([userId, handle])
   @@index([userId, status])
@@ -189,4 +192,54 @@ model LoginFailure {
   email   String   @id
   count   Int
   firstAt DateTime
+}
+
+/// Official Instagram API login for an account (Instagram Login for Business). Powers the inbox and reply detection.
+model IgConnection {
+  igAccountId String    @id
+  igAccount   IgAccount @relation(fields: [igAccountId], references: [id], onDelete: Cascade)
+  /// Professional account id: `entry.id` in webhooks.
+  graphUserId String    @unique
+  /// App-scoped id; what Meta's deauthorize and data-deletion callbacks send.
+  appUserId   String
+  username    String
+  /// Long-lived token, AES-256-GCM encrypted (see meta.ts). Refreshed before it expires.
+  accessToken String
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+/// A DM thread, created when someone messages a connected account.
+model Conversation {
+  id            String    @id @default(cuid())
+  igAccountId   String
+  igAccount     IgAccount @relation(fields: [igAccountId], references: [id], onDelete: Cascade)
+  /// The other person's Instagram-scoped id.
+  igsid         String
+  handle        String?
+  name          String?
+  leadId        String?
+  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  lastMessageAt DateTime
+  /// Their last message; Instagram only allows replies within 24 hours of it.
+  lastInboundAt DateTime?
+  unread        Boolean   @default(false)
+  messages      Message[]
+
+  @@unique([igAccountId, igsid])
+  @@index([igAccountId, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// Instagram message id; dedupes webhook retries and the echo of our own replies.
+  mid            String       @unique
+  fromMe         Boolean
+  text           String
+  sentAt         DateTime
+
+  @@index([conversationId, sentAt])
 }

@@ -61,7 +61,7 @@ export class EngineService {
 
   async accountStats(userId: string) {
     const [accounts, counts] = await Promise.all([
-      this.db.igAccount.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
+      this.db.igAccount.findMany({ where: { userId }, orderBy: { createdAt: 'asc' }, include: { connection: { select: { username: true, expiresAt: true } } } }),
       this.db.$queryRaw<{ igAccountId: string; sent24h: bigint; queued: bigint }[]>`
         SELECT c."igAccountId",
                count(*) FILTER (WHERE j.state = 'Sent' AND j."sentAt" >= now() - interval '24 hours') AS "sent24h",

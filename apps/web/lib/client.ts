@@ -1,5 +1,6 @@
 "use client"
 
+import { signOut } from "next-auth/react"
 import { useCallback, useEffect, useState } from "react"
 
 export async function call<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -9,7 +10,8 @@ export async function call<T = unknown>(path: string, init: { method?: string; b
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   })
   const data = await res.json().catch(() => null)
-  if (res.status === 401) window.location.href = "/login"
+  // Clears the session cookie too: a removed user would otherwise bounce between /login and the app forever.
+  if (res.status === 401) await signOut({ redirectTo: "/login" })
   if (!res.ok) throw new Error([data?.message].flat().filter(Boolean).join("\n") || res.statusText)
   return data as T
 }

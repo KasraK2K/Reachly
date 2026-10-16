@@ -58,7 +58,7 @@ Defaults for new accounts: 20 messages per 24h, 45–120 s between messages, qui
 
 ```bash
 pnpm --filter @reachly/shared test   # renderer/spintax/handles
-pnpm --filter @reachly/api test      # engine: concurrency, pacing, cap, pause, quiet hours (needs Postgres)
+pnpm --filter @reachly/api test      # engine, inbox webhooks, lockout (needs Postgres)
 ```
 
 **Stop on reply:** a follow-up is only handed out while the lead is still *New* or *Contacted*. Marking a lead *Replied*, *Converted* or *Not interested* (in Leads, in the Reply assistant, or through a Calendly booking) cancels everything still queued for them.
@@ -68,15 +68,39 @@ pnpm --filter @reachly/api test      # engine: concurrency, pacing, cap, pause, 
 - **Analytics:** reply and conversion rate per campaign and per first-message variant (A/B), messages sent over the last 14 days, and a CSV export of all leads (Leads → Export CSV). Replies are counted from lead statuses.
 - **Reply assistant (AI, suggestions only):** describe your persona, offer, goal, objections and handoff rules once, then paste a DM thread to get three reply drafts. Nothing is ever sent automatically. Needs `ANTHROPIC_API_KEY` in `apps/api/.env`; uses `claude-opus-5-5`.
 - **Calendly:** Settings → Calendly creates a secret webhook URL. Subscribe it to `invitee.created` and pass the lead's handle as `utm_content` on your booking link (or ask for it in a booking question). A booking marks the lead Converted and cancels their follow-ups. The web app must be reachable from the internet for Calendly to call it.
+- **Inbox:** connect an account through Instagram Login (Settings → *Connect Instagram*) and replies arrive in **Inbox** through Meta's webhooks. A reply marks the matching lead *Replied* and cancels its follow-ups automatically. You can answer from Reachly within Instagram's 24-hour window; after that, use the Instagram app. Setup is below.
 - **Account:** users can change their own password in Settings. Sign-in lockout is stored in Postgres, so it holds across API instances.
+
+## Inbox setup (Meta app)
+
+The inbox uses the official *Instagram API with Instagram Login*. The sending account must be an Instagram **Business or Creator** account; no Facebook Page is needed.
+
+1. Expose the web app over HTTPS (Meta won't call `localhost`), e.g. `ngrok http 3000` or `cloudflared tunnel --url http://localhost:3000`.
+2. In [Meta for Developers](https://developers.facebook.com/apps), create an app (type *Business*), add the **Instagram** product, and open *API setup with Instagram login*.
+3. Put these in `apps/api/.env` and restart the API:
+   - `IG_APP_ID`, `IG_APP_SECRET`: the **Instagram** app ID and secret from that page (not the Meta app ID).
+   - `APP_URL`: your public HTTPS URL, no trailing slash.
+   - `IG_WEBHOOK_VERIFY_TOKEN`: any random string.
+4. On that page, set:
+   - **Business login** redirect URL: `$APP_URL/api/meta/callback`
+   - **Webhooks** callback URL: `$APP_URL/api/webhooks/instagram`, with the verify token from step 3, then subscribe to the `messages` field.
+   - **Deauthorize** callback URL: `$APP_URL/api/meta/deauthorize`
+   - **Data deletion request** URL: `$APP_URL/api/meta/data-deletion` (its status page is `/data-deletion`).
+5. Until the app passes App Review, only Instagram accounts added as testers (App roles → Roles → *Instagram Tester*, accepted in the Instagram app) can connect, and webhooks only arrive while the app is in Live mode with *Advanced Access* for `instagram_business_manage_messages`.
+6. Open Reachly through the public URL, go to Settings → *Connect Instagram* and log into the same account as the handle.
+
+The app asks for only `instagram_business_basic` and `instagram_business_manage_messages`. App Review needs a screencast of connecting an account, receiving a DM in Inbox and replying. Tokens are stored encrypted and refreshed automatically before their 60 days run out. The encryption key is derived from `INTERNAL_JWT_SECRET`, so if you change that secret, accounts have to reconnect.
 
 ## Known limits
 
 - Instagram markup changes will break sending. All selectors and text matchers live in `apps/extension/lib/selectors.ts`, and they assume the Instagram UI is set to **English**.
-- Replies aren't detected yet: there's no inbox or Graph API. Mark a lead *Replied* / *Not interested* in Leads, and any queued messages to that lead are cancelled. If you forget, a follow-up can still go out to someone who answered on Instagram.
+- Reply detection only works for accounts connected to the Instagram API. For any other account, mark a lead *Replied* in Leads yourself, or a follow-up can still reach someone who already answered.
+- A reply is matched to a lead by Instagram username, so a lead whose handle has since changed won't be matched.
+- The inbox refreshes every 15 seconds while it's open; it isn't instant.
 - Chrome must stay open while sending. `chrome.alarms` fires at most every 30 s, so delays shorter than 30 s are effectively 30 s.
 - Pacing lowers the risk of Instagram restricting an account. It doesn't remove that risk.
 
-- The sending engine has never run against the real instagram.com; it needs a test with a real account.
 
-Not built yet: Meta app + Instagram Login + inbox (Graph API), AI autopilot, AI lead scoring, billing, teams/workspaces.
+- The inbox has only been tested with simulated Meta webhooks; it still needs a run against a real Meta app.
+
+Not built yet: comment-to-DM and welcome-DM automations, AI autopilot, AI lead scoring, billing, teams/workspaces.

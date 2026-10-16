@@ -29,8 +29,9 @@ export default function LeadsPage() {
 }
 
 function Leads() {
-  const initialStatus = useSearchParams().get("status")
-  const [q, setQ] = useState("")
+  const search = useSearchParams()
+  const initialStatus = search.get("status")
+  const [q, setQ] = useState(search.get("q") ?? "")
   const [debouncedQ, setDebouncedQ] = useState("")
   const [status, setStatus] = useState(initialStatus ?? "all")
   const [tag, setTag] = useState("all")

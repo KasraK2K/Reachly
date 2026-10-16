@@ -39,6 +39,8 @@ export interface Account {
   sent24h: number
   queued: number
   online: boolean
+  /** Instagram API login (inbox). Null = not connected. */
+  connection: { username: string; expiresAt: string } | null
 }
 
 export interface Campaign {
@@ -82,4 +84,30 @@ export interface Me {
 
 export interface User extends Me {
   createdAt: string
+}
+
+export interface Conversation {
+  id: string
+  handle: string | null
+  name: string | null
+  unread: boolean
+  lastMessageAt: string
+  /** Replies are only possible until then (Instagram's 24-hour window). */
+  windowEndsAt: string | null
+  igAccount: { handle: string }
+  lead: { id: string; status: LeadStatus } | null
+  last: { text: string; fromMe: boolean } | null
+}
+
+export interface Message {
+  id: string
+  fromMe: boolean
+  text: string
+  sentAt: string
+}
+
+export interface Thread extends Omit<Conversation, "igAccount" | "last"> {
+  account: { handle: string; connected: boolean }
+  lead: { id: string; status: LeadStatus; name: string | null } | null
+  messages: Message[]
 }

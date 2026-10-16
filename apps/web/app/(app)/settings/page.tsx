@@ -1,7 +1,7 @@
 "use client"
 
-import { Plug, Plus, Settings2, Trash2, Unlink } from "lucide-react"
-import { useState } from "react"
+import { Inbox, Plug, Plus, Settings2, Trash2, Unlink } from "lucide-react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { AccountDialog } from "@/components/account-dialog"
 import { EmptyState, fmtDate, PageHeader } from "@/components/common"
@@ -19,6 +19,22 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState<Account | null>(null)
   const [open, setOpen] = useState(false)
   const [pairing, setPairing] = useState(false)
+
+  // Back from Instagram Login (see app/api/meta/callback).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get("meta") === "connected") toast.success("Instagram connected. Replies will show up in the Inbox.")
+    if (p.get("meta_error")) toast.error(p.get("meta_error"), { duration: 10_000 })
+    if (p.has("meta") || p.has("meta_error")) window.history.replaceState(null, "", "/settings")
+  }, [])
+
+  async function connectInbox(a: Account) {
+    try {
+      window.location.href = (await call<{ url: string }>(`/meta/connect-url?accountId=${a.id}`)).url
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
 
   const edit = (a: Account | null) => {
     setEditing(a)
@@ -114,6 +130,27 @@ export default function SettingsPage() {
                       " · not yet bound to a browser login"
                     )}
                   </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                    {a.connection ? (
+                      new Date(a.connection.expiresAt) < new Date() ? (
+                        <span className="text-amber-700 dark:text-amber-300">Inbox: Instagram login expired, reconnect to keep receiving replies.</span>
+                      ) : (
+                        <span className="text-muted-foreground">Inbox: connected as @{a.connection.username}. Replies arrive in the Inbox.</span>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground">Inbox: not connected. Connect to see replies and stop follow-ups automatically. Needs a Business or Creator account.</span>
+                    )}
+                    <div className="flex gap-2">
+                      {a.connection && (
+                        <Button size="sm" variant="ghost" onClick={() => post(`/accounts/${a.id}/meta/disconnect`, "POST", "Inbox disconnected")}>
+                          Disconnect
+                        </Button>
+                      )}
+                      <Button size="sm" variant={a.connection ? "outline" : "default"} onClick={() => connectInbox(a)}>
+                        <Inbox /> {a.connection ? "Reconnect" : "Connect Instagram"}
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             ))}

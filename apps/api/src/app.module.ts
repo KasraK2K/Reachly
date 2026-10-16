@@ -9,6 +9,8 @@ import { CampaignsController } from './campaigns.controller';
 import { EngineService } from './engine.service';
 import { ExtensionController } from './extension.controller';
 import { Auth } from './http';
+import { InboxController } from './inbox.controller';
+import { InboxService } from './inbox.service';
 import { IntegrationsController } from './integrations.controller';
 import { LeadsController } from './leads.controller';
 import { PrismaService } from './prisma.service';
@@ -25,7 +27,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, UsersController, LeadsController, TemplatesController, AccountsController, CampaignsController, ExtensionController, AnalyticsController, AssistantController, IntegrationsController],
-  providers: [PrismaService, EngineService, { provide: APP_GUARD, useClass: AuthGuard }],
+  controllers: [HealthController, AuthController, UsersController, LeadsController, TemplatesController, AccountsController, CampaignsController, ExtensionController, AnalyticsController, AssistantController, IntegrationsController, InboxController],
+  providers: [PrismaService, EngineService, InboxService, { provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AppModule {}

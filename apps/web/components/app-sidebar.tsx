@@ -1,6 +1,6 @@
 "use client"
 
-import { BarChart3, Bot, LayoutDashboard, LogOut, Megaphone, MessageSquareText, Moon, Settings, Sun, UserCog, Users } from "lucide-react"
+import { BarChart3, Bot, Inbox, LayoutDashboard, LogOut, Megaphone, MessageSquareText, Moon, Settings, Sun, UserCog, Users } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
@@ -26,6 +26,7 @@ const groups = [
   {
     label: "Outreach",
     items: [
+      { href: "/inbox", label: "Inbox", icon: Inbox },
       { href: "/leads", label: "Leads", icon: Users },
       { href: "/templates", label: "Templates", icon: MessageSquareText },
       { href: "/campaigns", label: "Campaigns", icon: Megaphone },

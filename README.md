@@ -66,9 +66,10 @@ pnpm --filter @reachly/api test      # engine, inbox webhooks, lockout (needs Po
 ## More features
 
 - **Analytics:** reply and conversion rate per campaign and per first-message variant (A/B), messages sent over the last 14 days, and a CSV export of all leads (Leads → Export CSV). Replies are counted from lead statuses.
-- **Reply assistant (AI, suggestions only):** describe your persona, offer, goal, objections and handoff rules once, then paste a DM thread to get three reply drafts. Nothing is ever sent automatically. Needs `ANTHROPIC_API_KEY` in `apps/api/.env`; uses `claude-opus-5-5`.
+- **Reply assistant (AI, suggestions only):** describe your persona, offer, goal, objections and handoff rules once, then paste a DM thread (or press *Suggest replies* in an Inbox thread) to get three reply drafts. Each Instagram account can have its own setup or use the default. Nothing is ever sent automatically. Needs `ANTHROPIC_API_KEY` in `apps/api/.env`; uses `claude-opus-5-5`.
 - **Calendly:** Settings → Calendly creates a secret webhook URL. Subscribe it to `invitee.created` and pass the lead's handle as `utm_content` on your booking link (or ask for it in a booking question). A booking marks the lead Converted and cancels their follow-ups. The web app must be reachable from the internet for Calendly to call it.
 - **Inbox:** connect an account through Instagram Login (Settings → *Connect Instagram*) and replies arrive in **Inbox** through Meta's webhooks. A reply marks the matching lead *Replied* and cancels its follow-ups automatically. You can answer from Reachly within Instagram's 24-hour window; after that, use the Instagram app. Setup is below.
+- **Dashboard:** unread-replies banner, setup progress, and a feed of recent sends, failures and replies.
 - **Account:** users can change their own password in Settings. Sign-in lockout is stored in Postgres, so it holds across API instances.
 
 ## Inbox setup (Meta app)
@@ -93,7 +94,7 @@ The app asks for only `instagram_business_basic` and `instagram_business_manage_
 
 ## Known limits
 
-- Instagram markup changes will break sending. All selectors and text matchers live in `apps/extension/lib/selectors.ts`, and they assume the Instagram UI is set to **English**.
+- Instagram markup changes will break sending. All selectors and text matchers live in `apps/extension/lib/selectors.ts`. They cover English, Spanish, Portuguese, French, German, Italian, Turkish, Persian, Arabic and Russian, but only English has been checked against the live site.
 - Reply detection only works for accounts connected to the Instagram API. For any other account, mark a lead *Replied* in Leads yourself, or a follow-up can still reach someone who already answered.
 - A reply is matched to a lead by Instagram username, so a lead whose handle has since changed won't be matched.
 - The inbox refreshes every 15 seconds while it's open; it isn't instant.

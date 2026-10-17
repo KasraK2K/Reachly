@@ -28,8 +28,7 @@ export function AccountDialog({ account, open, onOpenChange, onSaved }: { accoun
   async function save() {
     setBusy(true)
     try {
-      const { handle, ...settings } = form
-      await call(account ? `/accounts/${account.id}` : "/accounts", { method: account ? "PATCH" : "POST", body: account ? settings : { handle, ...settings } })
+      await call(account ? `/accounts/${account.id}` : "/accounts", { method: account ? "PATCH" : "POST", body: form })
       toast.success("Saved")
       onOpenChange(false)
       onSaved()
@@ -44,16 +43,14 @@ export function AccountDialog({ account, open, onOpenChange, onSaved }: { accoun
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{account ? `@${account.handle} sending limits` : "Add Instagram account"}</DialogTitle>
+          <DialogTitle>{account ? `@${account.handle} settings` : "Add Instagram account"}</DialogTitle>
           <DialogDescription>Limits are counted per Instagram account across every browser that sends for it.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          {!account && (
-            <div className="grid gap-1.5">
-              <Label htmlFor="acc-handle">Instagram handle</Label>
-              <Input id="acc-handle" value={form.handle} onChange={(e) => set("handle", e.target.value)} placeholder="@yourbrand" autoFocus />
-            </div>
-          )}
+          <div className="grid gap-1.5">
+            <Label htmlFor="acc-handle">Instagram handle</Label>
+            <Input id="acc-handle" value={form.handle} onChange={(e) => set("handle", e.target.value)} placeholder="@yourbrand" autoFocus={!account} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
               <Label htmlFor="acc-limit">Messages per 24h</Label>
@@ -97,7 +94,7 @@ export function AccountDialog({ account, open, onOpenChange, onSaved }: { accoun
           </p>
         </div>
         <DialogFooter>
-          <Button onClick={save} disabled={busy || (!account && !form.handle.trim())}>
+          <Button onClick={save} disabled={busy || !form.handle.trim()}>
             {busy ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>

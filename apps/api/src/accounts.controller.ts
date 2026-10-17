@@ -18,6 +18,7 @@ const Settings = z
   })
   .partial();
 const Create = Settings.extend({ handle: z.string() });
+const Update = Settings.extend({ handle: z.string().optional() });
 
 @Controller('accounts')
 export class AccountsController {
@@ -43,12 +44,17 @@ export class AccountsController {
 
   @Patch(':id')
   async update(@UserId() userId: string, @Param('id') id: string, @Body() body: unknown) {
-    const data = parse(Settings, body);
+    const { handle: raw, ...data } = parse(Update, body);
     const acct = found(await this.db.igAccount.findFirst({ where: { id, userId } }), 'Account');
+    const handle = raw === undefined ? undefined : normalizeHandle(raw);
+    if (handle === null) throw new BadRequestException('Invalid Instagram handle');
+    if (handle && handle !== acct.handle && (await this.db.igAccount.findFirst({ where: { userId, handle } }))) {
+      throw new BadRequestException('Account already added');
+    }
     if ((data.minDelaySec ?? acct.minDelaySec) > (data.maxDelaySec ?? acct.maxDelaySec)) {
       throw new BadRequestException('Min delay must be less than or equal to max delay');
     }
-    return this.db.igAccount.update({ where: { id }, data });
+    return this.db.igAccount.update({ where: { id }, data: { ...data, handle } });
   }
 
   /** Clears an auto-pause after the user has checked their Instagram account. */

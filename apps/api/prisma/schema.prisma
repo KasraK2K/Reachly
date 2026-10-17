@@ -83,6 +83,8 @@ model IgAccount {
   nextSendAt          DateTime?
   lastHeartbeatAt     DateTime?
   extensionVersion    String?
+  /// AI reply assistant setup for this account; null = use the user's default (User.aiSetter).
+  aiSetter            Json?
   createdAt           DateTime       @default(now())
   campaigns           Campaign[]
   connection          IgConnection?

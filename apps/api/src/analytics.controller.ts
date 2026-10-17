@@ -70,6 +70,40 @@ export class AnalyticsController {
     };
   }
 
+  /** Latest sends, failures and inbound replies, newest first, for the dashboard feed. */
+  @Get('activity')
+  async activity(@UserId() userId: string) {
+    const [jobs, replies] = await Promise.all([
+      this.db.sendJob.findMany({
+        where: { campaign: { userId }, state: { in: ['Sent', 'Failed', 'Skipped'] } },
+        orderBy: { claimedAt: 'desc' },
+        take: 20,
+        select: { id: true, state: true, step: true, sentAt: true, claimedAt: true, error: true, lead: { select: { handle: true } }, campaign: { select: { id: true, name: true } } },
+      }),
+      this.db.message.findMany({
+        where: { fromMe: false, conversation: { igAccount: { userId } } },
+        orderBy: { sentAt: 'desc' },
+        take: 20,
+        select: { id: true, text: true, sentAt: true, conversation: { select: { handle: true, name: true } } },
+      }),
+    ]);
+    const items = [
+      ...jobs.map((j) => ({
+        id: j.id,
+        kind: j.state === 'Sent' ? (j.step ? 'followup' : 'sent') : 'failed',
+        at: j.sentAt ?? j.claimedAt,
+        who: `@${j.lead.handle}`,
+        campaign: j.campaign,
+        detail: j.state === 'Sent' ? null : j.error,
+      })),
+      ...replies.map((m) => ({ id: m.id, kind: 'reply', at: m.sentAt, who: m.conversation.handle ? `@${m.conversation.handle}` : m.conversation.name || 'Instagram user', campaign: null, detail: m.text.slice(0, 140) })),
+    ];
+    return items
+      .filter((i) => i.at)
+      .sort((a, b) => b.at!.getTime() - a.at!.getTime())
+      .slice(0, 20);
+  }
+
   @Get('leads/export')
   @Header('content-type', 'text/csv; charset=utf-8')
   @Header('content-disposition', 'attachment; filename="reachly-leads.csv"')

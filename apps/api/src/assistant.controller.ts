@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { Body, Controller, Get, HttpException, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, Patch, Post, Query } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import * as z4 from 'zod/v4';
 import { found, parse, UserId } from './http';
@@ -27,27 +28,65 @@ export class AssistantController {
 
   constructor(private db: PrismaService) {}
 
+  /** With accountId: that account's own setup (`custom: false` = it uses the default). Without: the default. */
   @Get('settings')
-  async settings(@UserId() userId: string) {
+  async settings(@UserId() userId: string, @Query('accountId') accountId?: string) {
+    if (accountId) {
+      const acct = found(await this.db.igAccount.findFirst({ where: { id: accountId, userId }, select: { aiSetter: true } }), 'Account');
+      if (acct.aiSetter) return { ...Setter.parse(acct.aiSetter), custom: true };
+    }
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { aiSetter: true } });
-    return Setter.parse(user.aiSetter ?? {});
+    return { ...Setter.parse(user.aiSetter ?? {}), custom: false };
   }
 
   @Patch('settings')
-  async save(@UserId() userId: string, @Body() body: unknown) {
-    const aiSetter = parse(Setter, body);
-    await this.db.user.update({ where: { id: userId }, data: { aiSetter } });
-    return aiSetter;
+  async save(@UserId() userId: string, @Body() body: unknown, @Query('accountId') accountId?: string) {
+    const { custom, ...aiSetter } = parse(Setter.extend({ custom: z.boolean().default(true) }), body);
+    if (!accountId) {
+      await this.db.user.update({ where: { id: userId }, data: { aiSetter } });
+      return { ...aiSetter, custom: false };
+    }
+    found(await this.db.igAccount.findFirst({ where: { id: accountId, userId } }), 'Account');
+    await this.db.igAccount.update({ where: { id: accountId }, data: { aiSetter: custom ? aiSetter : Prisma.DbNull } });
+    return this.settings(userId, accountId);
   }
 
+  /**
+   * Either a pasted `conversation` (optionally with leadId/accountId), or an Inbox `conversationId`,
+   * whose stored messages, lead and account are used.
+   */
   @Post('suggest')
   async suggest(@UserId() userId: string, @Body() body: unknown) {
-    const { leadId, conversation } = parse(z.object({ leadId: z.string().optional(), conversation: z.string().trim().min(1).max(20000) }), body);
-    const [user, lead] = await Promise.all([
-      this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { aiSetter: true } }),
+    const input = parse(
+      z.union([
+        z.object({ conversationId: z.string() }),
+        z.object({ leadId: z.string().optional(), accountId: z.string().optional(), conversation: z.string().trim().min(1).max(20000) }),
+      ]),
+      body,
+    );
+    let conversation: string;
+    let leadId: string | null | undefined;
+    let accountId: string | undefined;
+    if ('conversationId' in input) {
+      const c = found(
+        await this.db.conversation.findFirst({
+          where: { id: input.conversationId, igAccount: { userId } },
+          include: { messages: { orderBy: { sentAt: 'desc' }, take: 40, select: { fromMe: true, text: true } } },
+        }),
+        'Conversation',
+      );
+      const them = c.name || (c.handle ? `@${c.handle}` : 'Prospect');
+      conversation = c.messages.reverse().map((m) => `${m.fromMe ? 'Me' : them}: ${m.text}`).join('\n');
+      if (!conversation) throw new HttpException('This conversation has no messages yet.', 400);
+      ({ leadId } = c);
+      accountId = c.igAccountId;
+    } else {
+      ({ conversation, leadId, accountId } = input);
+    }
+    const [setter, lead] = await Promise.all([
+      this.settings(userId, accountId),
       leadId ? this.db.lead.findFirst({ where: { id: leadId, userId } }).then((l) => found(l, 'Lead')) : null,
     ]);
-    const setter = Setter.parse(user.aiSetter ?? {});
 
     this.client ??= new Anthropic();
     try {

@@ -190,7 +190,8 @@ export class EngineService {
         }
         await tx.sendJob.update({
           where: { id: job.id },
-          data: { state: job.attempts >= MAX_ATTEMPTS ? 'Failed' : 'Queued', claimedAt: null, error: r.detail ?? r.error },
+          // A final failure keeps claimedAt as its timestamp (the dashboard feed shows it).
+          data: job.attempts >= MAX_ATTEMPTS ? { state: 'Failed', error: r.detail ?? r.error } : { state: 'Queued', claimedAt: null, error: r.detail ?? r.error },
         });
         await tx.igAccount.update({
           where: { id: acct.id },

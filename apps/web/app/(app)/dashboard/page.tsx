@@ -1,16 +1,16 @@
 "use client"
 
 import { LEAD_STATUSES, type LeadStatus } from "@reachly/shared"
-import { CheckCircle2, Circle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Circle, CornerDownRight, MessageCircle, Send } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { LEAD_STATUS_LABEL, PageHeader } from "@/components/common"
+import { fmtDate, LEAD_STATUS_LABEL, PageHeader } from "@/components/common"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { call, useApi } from "@/lib/client"
-import type { Account, Campaign, Template } from "@/lib/types"
+import type { Account, Campaign, Conversation, Template } from "@/lib/types"
 
 const PIPELINE_COLOR: Record<LeadStatus, string> = {
   New: "bg-zinc-400",
@@ -20,11 +20,37 @@ const PIPELINE_COLOR: Record<LeadStatus, string> = {
   NotInterested: "bg-red-400",
 }
 
+type Activity = { id: string; kind: "sent" | "followup" | "failed" | "reply"; at: string; who: string; campaign: { id: string; name: string } | null; detail: string | null }
+
+const ACTIVITY = {
+  sent: { icon: Send, text: "First message sent to", color: "text-blue-500" },
+  followup: { icon: CornerDownRight, text: "Follow-up sent to", color: "text-blue-500" },
+  failed: { icon: AlertTriangle, text: "Couldn’t message", color: "text-amber-500" },
+  reply: { icon: MessageCircle, text: "Reply from", color: "text-violet-500" },
+} as const
+
+/** Circular progress, 0–1. */
+function Ring({ value, label }: { value: number; label: string }) {
+  const r = 22
+  const c = 2 * Math.PI * r
+  return (
+    <svg viewBox="0 0 52 52" className="size-14 shrink-0 -rotate-90" role="img" aria-label={label}>
+      <circle cx="26" cy="26" r={r} fill="none" strokeWidth="5" className="stroke-muted" />
+      <circle cx="26" cy="26" r={r} fill="none" strokeWidth="5" strokeLinecap="round" className="stroke-emerald-500 transition-[stroke-dashoffset]" strokeDasharray={c} strokeDashoffset={c * (1 - value)} />
+      <text x="26" y="26" dominantBaseline="central" textAnchor="middle" className="rotate-90 fill-foreground text-[13px] font-semibold" style={{ transformOrigin: "26px 26px" }}>
+        {Math.round(value * 100)}%
+      </text>
+    </svg>
+  )
+}
+
 export default function DashboardPage() {
   const accounts = useApi<Account[]>("/accounts")
   const counts = useApi<Record<LeadStatus, number>>("/leads/counts").data
   const templates = useApi<Template[]>("/templates").data
   const campaigns = useApi<Campaign[]>("/campaigns").data
+  const unread = useApi<Conversation[]>("/conversations").data?.filter((c) => c.unread).length ?? 0
+  const activity = useApi<Activity[]>("/activity").data
   const totalLeads = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0
 
   const steps = [
@@ -62,13 +88,31 @@ export default function DashboardPage() {
           </Alert>
         ))}
 
+      {unread > 0 && (
+        <Alert className="mb-4 border-violet-500/40">
+          <MessageCircle className="text-violet-500" />
+          <AlertTitle>
+            {unread} unread {unread === 1 ? "reply" : "replies"}
+          </AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Answer while Instagram&apos;s 24-hour reply window is still open.</span>
+            <Button size="sm" asChild>
+              <Link href="/inbox">Open Inbox</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {steps.some((s) => !s.done) && (
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Get set up</CardTitle>
-            <CardDescription>
-              {steps.filter((s) => s.done).length} of {steps.length} done
-            </CardDescription>
+          <CardHeader className="flex items-center gap-4">
+            <Ring value={steps.filter((s) => s.done).length / steps.length} label={`${steps.filter((s) => s.done).length} of ${steps.length} setup steps done`} />
+            <div className="grid gap-1.5">
+              <CardTitle>Get set up</CardTitle>
+              <CardDescription>
+                {steps.filter((s) => s.done).length} of {steps.length} done
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-2">
             {steps.map((s) => (
@@ -128,6 +172,40 @@ export default function DashboardPage() {
               </Link>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Recent activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {activity && !activity.length && <p className="text-sm text-muted-foreground">Sends and replies show up here.</p>}
+          <ul className="grid gap-3">
+            {activity?.map((a) => {
+              const k = ACTIVITY[a.kind]
+              return (
+                <li key={`${a.kind}-${a.id}`} className="flex items-start gap-3 text-sm">
+                  <k.icon className={`mt-0.5 size-4 shrink-0 ${k.color}`} />
+                  <div className="min-w-0 flex-1">
+                    <p>
+                      {k.text} <span className="font-medium">{a.who}</span>
+                      {a.campaign && (
+                        <>
+                          {" · "}
+                          <Link className="text-muted-foreground hover:underline" href={`/campaigns/${a.campaign.id}`}>
+                            {a.campaign.name}
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                    {a.detail && <p className="truncate text-xs text-muted-foreground">{a.detail}</p>}
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{fmtDate(a.at)}</span>
+                </li>
+              )
+            })}
+          </ul>
         </CardContent>
       </Card>
     </>

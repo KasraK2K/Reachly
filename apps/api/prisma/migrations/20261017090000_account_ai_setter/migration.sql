@@ -1,0 +1,1 @@
+ALTER TABLE "IgAccount" ADD COLUMN "aiSetter" JSONB;

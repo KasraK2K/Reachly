@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { call, useApi } from "@/lib/client"
-import type { Lead, Page } from "@/lib/types"
+import type { Account, Lead, Page } from "@/lib/types"
 
 const FIELDS = [
   { key: "persona", label: "Persona", hint: "Who you are and how you talk. E.g. “Sam, runs a small video studio, friendly and direct.”" },
@@ -21,17 +23,41 @@ const FIELDS = [
   { key: "objections", label: "Objections", hint: "Common pushback and how you answer it." },
   { key: "handoff", label: "Handoff rules", hint: "When you want to take over yourself. E.g. “custom pricing, complaints”." },
 ] as const
-type Setter = Record<(typeof FIELDS)[number]["key"], string>
+type Setter = Record<(typeof FIELDS)[number]["key"], string> & { custom: boolean }
 
-function Setup() {
-  const { data, setData } = useApi<Setter>("/assistant/settings")
+const DEFAULT = "default"
+
+/** Picks the Instagram account whose AI setup is used; "default" = the setup shared by all accounts. */
+function AccountPicker({ value, onChange, accounts, defaultLabel }: { value: string; onChange: (v: string) => void; accounts?: Account[]; defaultLabel: string }) {
+  if (!accounts?.length) return null
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-64" aria-label="Instagram account">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={DEFAULT}>{defaultLabel}</SelectItem>
+        {accounts.map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            @{a.handle}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+function Setup({ accounts }: { accounts?: Account[] }) {
+  const [accountId, setAccountId] = useState(DEFAULT)
+  const path = `/assistant/settings${accountId === DEFAULT ? "" : `?accountId=${accountId}`}`
+  const { data, setData } = useApi<Setter>(path)
   const [busy, setBusy] = useState(false)
-  if (!data) return null
+  const isAccount = accountId !== DEFAULT
 
-  async function save() {
+  async function save(body: Setter) {
     setBusy(true)
     try {
-      setData(await call<Setter>("/assistant/settings", { method: "PATCH", body: data }))
+      setData(await call<Setter>(path, { method: "PATCH", body }))
       toast.success("Saved")
     } catch (e) {
       toast.error((e as Error).message)
@@ -40,25 +66,42 @@ function Setup() {
     }
   }
 
+  const editable = data && (!isAccount || data.custom)
   return (
     <Card>
       <CardContent className="grid gap-4">
-        {FIELDS.map((f) => (
-          <div key={f.key} className="grid gap-1.5">
-            <Label htmlFor={`ai-${f.key}`}>{f.label}</Label>
-            <Textarea id={`ai-${f.key}`} rows={f.key === "knowledge" ? 6 : 3} value={data[f.key]} onChange={(e) => setData({ ...data, [f.key]: e.target.value })} />
-            <p className="text-xs text-muted-foreground">{f.hint}</p>
-          </div>
-        ))}
-        <Button className="justify-self-start" onClick={save} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <AccountPicker value={accountId} onChange={setAccountId} accounts={accounts} defaultLabel="Default (all accounts)" />
+          {isAccount && data && (
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={data.custom} disabled={busy} onCheckedChange={(custom) => save({ ...data, custom })} />
+              Own setup for this account
+            </label>
+          )}
+        </div>
+        {isAccount && data && !data.custom && (
+          <p className="text-sm text-muted-foreground">This account uses the default setup below. Turn on “Own setup” to give it a different persona, offer or rules.</p>
+        )}
+        {data &&
+          FIELDS.map((f) => (
+            <div key={f.key} className="grid gap-1.5">
+              <Label htmlFor={`ai-${f.key}`}>{f.label}</Label>
+              <Textarea id={`ai-${f.key}`} rows={f.key === "knowledge" ? 6 : 3} value={data[f.key]} disabled={!editable} onChange={(e) => setData({ ...data, [f.key]: e.target.value })} />
+              <p className="text-xs text-muted-foreground">{f.hint}</p>
+            </div>
+          ))}
+        {editable && (
+          <Button className="justify-self-start" onClick={() => save(data)} disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-function Suggest() {
+function Suggest({ accounts }: { accounts?: Account[] }) {
+  const [accountId, setAccountId] = useState(DEFAULT)
   const [q, setQ] = useState("")
   const [debounced, setDebounced] = useState("")
   const [lead, setLead] = useState<Lead | null>(null)
@@ -75,7 +118,7 @@ function Suggest() {
     setBusy(true)
     setResult(null)
     try {
-      setResult(await call("/assistant/suggest", { body: { conversation, ...(lead && { leadId: lead.id }) } }))
+      setResult(await call("/assistant/suggest", { body: { conversation, ...(lead && { leadId: lead.id }), ...(accountId !== DEFAULT && { accountId }) } }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -96,6 +139,13 @@ function Suggest() {
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardContent className="grid gap-4">
+          {!!accounts?.length && (
+            <div className="grid gap-1.5">
+              <Label>Reply as</Label>
+              <AccountPicker value={accountId} onChange={setAccountId} accounts={accounts} defaultLabel="Default setup" />
+              <p className="text-xs text-muted-foreground">Uses that account&apos;s own setup if it has one. Handy for testing a setup before you rely on it.</p>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor="ai-lead">Lead (optional)</Label>
             {lead ? (
@@ -170,19 +220,20 @@ function Suggest() {
 }
 
 export default function AssistantPage() {
+  const { data: accounts } = useApi<Account[]>("/accounts")
   return (
     <>
-      <PageHeader title="Reply assistant" description="Paste a conversation and get three reply drafts written in your voice, using what you put in Setup." />
+      <PageHeader title="Reply assistant" description="Get three reply drafts written in your voice, using what you put in Setup. Inbox threads have the same button." />
       <Tabs defaultValue="suggest">
         <TabsList className="mb-4">
           <TabsTrigger value="suggest">Suggest replies</TabsTrigger>
           <TabsTrigger value="setup">Setup</TabsTrigger>
         </TabsList>
         <TabsContent value="suggest">
-          <Suggest />
+          <Suggest accounts={accounts} />
         </TabsContent>
         <TabsContent value="setup">
-          <Setup />
+          <Setup accounts={accounts} />
         </TabsContent>
       </Tabs>
     </>

@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeft, Send } from "lucide-react"
+import { ArrowLeft, Send, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -32,6 +32,7 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
   const { data, setData, reload } = useApi<Thread>(`/conversations/${id}`)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [ai, setAi] = useState<{ suggestions: string[]; handoff: string | null } | "loading" | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
   usePoll(reload)
   useEffect(() => {
@@ -58,6 +59,22 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
     } finally {
       setBusy(false)
     }
+  }
+
+  async function suggest() {
+    setAi("loading")
+    try {
+      setAi(await call("/assistant/suggest", { body: { conversationId: id } }))
+    } catch (err) {
+      setAi(null)
+      toast.error((err as Error).message)
+    }
+  }
+
+  function pick(s: string) {
+    if (data?.account.connected && left) setText(s)
+    else navigator.clipboard.writeText(s).then(() => toast.success("Copied. Paste it into Instagram."))
+    setAi(null)
   }
 
   return (
@@ -93,7 +110,24 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
         <div ref={bottom} />
       </div>
 
+      {ai && ai !== "loading" && (
+        <div className="grid gap-2 border-t bg-muted/30 p-3">
+          {ai.handoff && <p className="rounded-md bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">Consider taking over: {ai.handoff}</p>}
+          {ai.suggestions.map((s, i) => (
+            <button key={i} onClick={() => pick(s)} className="rounded-lg border bg-background px-3 py-2 text-left text-sm whitespace-pre-wrap hover:bg-muted">
+              {s}
+            </button>
+          ))}
+          <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setAi(null)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
       <form onSubmit={send} className="border-t p-3">
+        <Button type="button" variant="outline" size="sm" className="mb-2" onClick={suggest} disabled={ai === "loading" || !data.messages.length}>
+          <Sparkles /> {ai === "loading" ? "Thinking…" : "Suggest replies"}
+        </Button>
         {!data.account.connected ? (
           <p className="text-sm text-muted-foreground">
             @{data.account.handle} is no longer connected to the Instagram API. <Link className="underline" href="/settings">Reconnect it in Settings</Link> to reply here.
